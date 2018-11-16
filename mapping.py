@@ -21,6 +21,9 @@ class Point:
     def dist(self, other):
         return np.sqrt((other.x - self.x)**2 + (other.y - self.y)**2)
 
+    def norm(self):
+        return self.dist(Point(0, 0))
+
     def mult(self, real_number):
         return Point(self.x * real_number, self.y * real_number)
 
@@ -36,14 +39,16 @@ class Line:
     def __init__(self, p1=None, p2=None):
 
         if p1 is None and p2 is None:
-            self.k = 0
-            self.m = 0
+            self.theta = None
+            self.p = None
         else:
-            try:
-                self.k = abs((p2.y - p1.y) / (p2.x - p1.x))
-            except Warning:
-                a = 0
-            self.m = p2.y - self.k * p2.x
+            dp = p2 - p1
+            self.theta = abs(np.arctan2(dp.y, dp.x))
+
+            if p1.norm() < p2.norm():
+                self.p = p1
+            else:
+                self.p = p2
 
         self.inliers = []
 
@@ -51,7 +56,13 @@ class Line:
         return "k: %s, m: %s" % (self.k, self.m)
 
     def _dist_from_line(self, point):
-        return abs(self.k * point.x - point.y + self.m) / np.sqrt(self.k ** 2 + 1)
+        # todo: DEBUUUUUUUUGGGG!!!!
+        q_moved = point - self.p
+        theta_q = np.arctan2(q_moved.y, q_moved.x)
+        if theta_q < 0:
+            theta_q += 2 * np.pi
+        dist = q_moved.norm() * np.sin(abs(theta_q - self.theta))
+        return dist
 
     def find_inliers(self, points, inlier_threshold):
         for point in points:

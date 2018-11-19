@@ -42,13 +42,14 @@ class Line:
             self.theta = None
             self.p = None
         else:
-            dp = p2 - p1
-            self.theta = abs(np.arctan2(dp.y, dp.x))
-
             if p1.norm() < p2.norm():
                 self.p = p1
+                dp = p2 - p1
             else:
                 self.p = p2
+                dp = p1 - p2
+            self.theta = np.arctan2(dp.y, dp.x)
+            print(self.theta)
 
         self.inliers = []
 
@@ -61,7 +62,7 @@ class Line:
         theta_q = np.arctan2(q_moved.y, q_moved.x)
         if theta_q < 0:
             theta_q += 2 * np.pi
-        dist = q_moved.norm() * np.sin(abs(theta_q - self.theta))
+        dist = abs(q_moved.norm() * np.sin(theta_q - self.theta))
         return dist
 
     def find_inliers(self, points, inlier_threshold):
@@ -166,11 +167,17 @@ if __name__ == "__main__":
     meas = Measurements(num_angles)
     meas.plot()
 
-    points = meas.transform()
-    mapper = Mapper(threshold)
+    #Debug distance
+    point = Point(6,-1)
+    line = Line(Point(6, 3), Point(0, 0))
+    dist = line._dist_from_line(point)
+    print(dist)
 
-    line = mapper.RANSAC(points)
-    line.plot_inliers()
+    #points = meas.transform()
+    #mapper = Mapper(threshold)
+
+    #line = mapper.RANSAC(points)
+    #line.plot_inliers()
 
     plt.axis([0, 3, 0, 3])
     plt.show()

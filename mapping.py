@@ -18,6 +18,9 @@ class Point:
     def __sub__(self, other):
         return Point(self.x - other.x, self.y - other.y)
 
+    def __eq__(self, other):
+        return self.x == other.x and self.y == other.y
+
     def dist(self, other):
         return np.sqrt((other.x - self.x)**2 + (other.y - self.y)**2)
 
@@ -49,7 +52,6 @@ class Line:
                 self.p = p2
                 dp = p1 - p2
             self.theta = np.arctan2(dp.y, dp.x)
-            print(self.theta)
 
         self.inliers = []
 
@@ -57,7 +59,6 @@ class Line:
         return "k: %s, m: %s" % (self.k, self.m)
 
     def _dist_from_line(self, point):
-        # todo: DEBUUUUUUUUGGGG!!!!
         q_moved = point - self.p
         theta_q = np.arctan2(q_moved.y, q_moved.x)
         if theta_q < 0:
@@ -134,8 +135,10 @@ class Measurements:
 
 class Mapper:
 
-    def __init__(self, inlier_threshold = 0.1):
+    def __init__(self, inlier_threshold = 0.1, points_treshold = 10):
         self.inlier_threshold = inlier_threshold
+        self.points_treshold = points_treshold
+
 
     def RANSAC(self, points):
         num_points = len(points)
@@ -154,30 +157,67 @@ class Mapper:
 
         return best_line
 
-    def seqential_RANSAC(self, points):
-        pass
+    def sequential_RANSAC(self, points):
+        walls = []
+        points_left = points
+        count = 0
+        while len(points_left) > self.points_treshold:
+            best_wall = Line()
+            best_wall = self.RANSAC(points_left)
+            count += 1
+            print("Lines: %s" % count)
+            walls.append(best_wall)
+
+            #REMOVE FROM POINTS_LEFT BEST_WALL.INLIERS BUT KEEPING THE ORDER
+            outliers = []
+            for point in points_left:
+                found = False
+                for inlier in best_wall.inliers:
+                    if point == inlier:
+                        found = True
+
+                if not found:
+                    outliers.append(point)
+
+            points_left = outliers
+
+        return walls
+
 
 
 if __name__ == "__main__":
 
-    num_angles = 360
-    threshold = 0.05
+    num_angles = 180
+    distance_threshold = 0.05
+    points_threshold = 10
 
     pose = Pose(0.225, 0.225, np.pi / 2)
     meas = Measurements(num_angles)
     meas.plot()
 
     #Debug distance
-    point = Point(6,-1)
-    line = Line(Point(6, 3), Point(0, 0))
-    dist = line._dist_from_line(point)
-    print(dist)
+    #point = Point(10,15)
+    #line = Line(Point(15, 10), Point(0, 0))
+    #dist = line._dist_from_line(point)
+    #print(dist)
 
-    #points = meas.transform()
-    #mapper = Mapper(threshold)
+    points = meas.transform()
+    print(len(points))
+    mapper = Mapper(distance_threshold,points_threshold)
 
     #line = mapper.RANSAC(points)
     #line.plot_inliers()
 
+    walls = mapper.sequential_RANSAC(points)
+    print(len(walls))
+
+    walls[0].plot_inliers()
     plt.axis([0, 3, 0, 3])
     plt.show()
+    walls[1].plot_inliers()
+    plt.axis([0, 3, 0, 3])
+    plt.show()
+    walls[2].plot_inliers()
+    plt.axis([0, 3, 0, 3])
+    plt.show()
+

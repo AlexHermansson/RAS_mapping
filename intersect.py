@@ -89,29 +89,57 @@ class Pose:
 
 
 def read_map():
+    min_x = 100
+    max_x = -100
+    min_y = 100
+    max_y = -100
 
     walls = []
     with open("maze.txt") as f:
         lines = f.readlines()
         for line in lines:
             coords = line.split()
-            p1 = Point(float(coords[0]), float(coords[1]))
-            p2 = Point(float(coords[2]), float(coords[3]))
+            x1, y1, x2, y2 = float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3])
+            p1 = Point(x1, y1)
+            p2 = Point(x2, y2)
             walls.append(Line(p1, p2))
-    return walls
+
+            if x1 < min_x:
+                min_x = x1
+            if x2 < min_x:
+                min_x = x2
+            if x1 > max_x:
+                max_x = x1
+            if x2 > max_x:
+                max_x = x2
+
+            if y1 < min_y:
+                min_y = y1
+            if y2 < min_y:
+                min_y = y2
+            if y1 > max_y:
+                max_y = y1
+            if y2 > max_y:
+                max_y = y2
+
+    return walls, min_x, max_x, min_y, max_y
 
 
 class Intersections:
 
     def __init__(self):
-        self.walls = read_map()
+        self.walls = []
+        self.min_x = 0
+        self.max_x = 0
+        self.min_y = 0
+        self.max_y = 0
+        self.read_map()
 
     def show_walls(self):
         for wall in self.walls:
             wall.plot()
-        # plt.show()
 
-    def find_intersections(self, pose, num_angles=10):
+    def find_intersections(self, pose, num_angles=10, plot=False):
         pose_point = Point(pose.x, pose.y)
         angles = np.linspace(0, 2 * np.pi, num_angles, endpoint=False)
         distances = []
@@ -128,16 +156,56 @@ class Intersections:
             intersections.append(closest_point)
             distances.append(dist)
 
-        [p.plot() for p in intersections]
+        if plot:
+            [p.plot() for p in intersections]
+
         return distances
 
     def extend_line(self, pose, dtheta):
         line_range = 100
         p1 = Point(pose.x, pose.y)
         x2 = pose.x + line_range * np.cos(pose.theta + dtheta)
-        y2 = pose.y + line_range * np.sin(pose.theta + dtheta)
+        y2 = pose.y + line_range * np.sin(pose.theta + dtheta)  # todo: plus pi in there?
         p2 = Point(x2, y2)
         return Line(p1, p2)
+
+    def read_map(self):
+        min_x = 100
+        max_x = -100
+        min_y = 100
+        max_y = -100
+
+        with open("maze.txt") as f:
+            lines = f.readlines()
+            for line in lines:
+                coords = line.split()
+                x1, y1, x2, y2 = float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3])
+                p1 = Point(x1, y1)
+                p2 = Point(x2, y2)
+                self.walls.append(Line(p1, p2))
+
+                if x1 < min_x:
+                    min_x = x1
+                if x2 < min_x:
+                    min_x = x2
+                if x1 > max_x:
+                    max_x = x1
+                if x2 > max_x:
+                    max_x = x2
+
+                if y1 < min_y:
+                    min_y = y1
+                if y2 < min_y:
+                    min_y = y2
+                if y1 > max_y:
+                    max_y = y1
+                if y2 > max_y:
+                    max_y = y2
+
+        self.min_x = min_x
+        self.max_x = max_x
+        self.min_y = min_y
+        self.max_y = max_y
 
 
 if __name__ == "__main__":

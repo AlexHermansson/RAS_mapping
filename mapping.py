@@ -1,6 +1,7 @@
-
 import numpy as np
 import matplotlib.pyplot as plt
+
+from intersect import Intersections
 
 
 class Point:
@@ -18,6 +19,9 @@ class Point:
     def __sub__(self, other):
         return Point(self.x - other.x, self.y - other.y)
 
+    def __eq__(self, other):
+        return self.x == other.x and self.y == other.y
+
     def dist(self, other):
         return np.sqrt((other.x - self.x)**2 + (other.y - self.y)**2)
 
@@ -30,8 +34,27 @@ class Point:
     def cross(self, other):
         return self.x * other.y - self.y * other.x
 
-    def plot(self):
-        plt.plot(self.x, self.y, 'ro')
+    def dot(self, other):
+        return self.x * other.x + self.y * other.y
+
+    def plot(self, cm='ro'):
+        plt.plot(self.x, self.y, cm, markersize=2)
+
+
+class Segment:
+
+    def __init__(self, p1, p2):
+        self.p1 = p1
+        self.p2 = p2
+
+    def __repr__(self):
+        return "(%s, %s)" % (self.p1, self.p2)
+
+    def dist_from_segment(self, point):
+        t_hat = (point - self.p1).dot(self.p2 - self.p1) / ((self.p2 - self.p1).norm() ** 2)
+        t_star = min(max(t_hat, 0), 1)
+        dist = (self.p1 + (self.p2 - self.p1).mult(t_star) - point).norm()
+        return dist
 
 
 class Line:
@@ -42,13 +65,13 @@ class Line:
             self.theta = None
             self.p = None
         else:
-            dp = p2 - p1
-            self.theta = abs(np.arctan2(dp.y, dp.x))
-
             if p1.norm() < p2.norm():
                 self.p = p1
+                dp = p2 - p1
             else:
                 self.p = p2
+                dp = p1 - p2
+            self.theta = np.arctan2(dp.y, dp.x)
 
         self.inliers = []
 
@@ -56,12 +79,11 @@ class Line:
         return "k: %s, m: %s" % (self.k, self.m)
 
     def _dist_from_line(self, point):
-        # todo: DEBUUUUUUUUGGGG!!!!
         q_moved = point - self.p
         theta_q = np.arctan2(q_moved.y, q_moved.x)
         if theta_q < 0:
             theta_q += 2 * np.pi
-        dist = q_moved.norm() * np.sin(abs(theta_q - self.theta))
+        dist = abs(q_moved.norm() * np.sin(theta_q - self.theta))
         return dist
 
     def find_inliers(self, points, inlier_threshold):
@@ -72,6 +94,7 @@ class Line:
 
     def plot_inliers(self):
         [point.plot() for point in self.inliers]
+
 
 class Pose:
 
@@ -92,49 +115,142 @@ class Pose:
 
 class Measurements:
 
-    def __init__(self, num_angles):
-        self.num_angles = num_angles
+    def __init__(self):
+        self.intersector = Intersections()
+        self.num_angles = 360
+        self.range_treshold = 0.15
+        self.poses = []
+        self.walls = []
         self.measurements = []
-        self.pose = Pose(0.225, 0.225, np.pi / 2)
-        self.read_measurements()
+        self.interesting_points = []
+        self.interesting_points2 = []
+        self.min_x = 0
+        self.max_x = 0
+        self.min_y = 0
+        self.max_y = 0
+        self._read_map()
+        self._read_measurements()
+
+    def get_interesting_points(self):
+
+        measurement_positions = []
+        angles = np.linspace(np.pi, 3 * np.pi, self.num_angles, endpoint=False)
+
+        for pose, measurements in zip(self.poses, self.measurements):
+
+            for dtheta, m in zip(angles, measurements):
+                if np.isinf(m):
+                    continue
+                x = pose.x + m * np.cos(pose.theta + dtheta)
+                y = pose.y + m * np.sin(pose.theta + dtheta)
+                point = Point(x, y)
+                min_dist = 100
+                for wall in self.walls:
+                    d = wall.dist_from_segment(point)
+                    if d < min_dist:
+                        min_dist = d
+
+                measurement_positions.append(point)
+                if min_dist > self.range_treshold:
+                    if self.max_x > point.x > self.min_x and self.max_y > point.y > self.min_y:
+                        self.interesting_points2.append(point)
+
+        return measurement_positions
 
     def transform(self):
 
         measurement_positions = []
         angles = np.linspace(np.pi, 3 * np.pi, self.num_angles, endpoint=False)
 
-        for a, m in zip(angles, self.measurements):
-            if np.isinf(m):
-                continue
-            x = self.pose.x + m * np.cos(self.pose.theta + a)
-            y = self.pose.x + m * np.sin(self.pose.theta + a)
-            measurement_positions.append(Point(x, y))
+        for pose, measurements in zip(self.poses, self.measurements):
+
+            modified_pose = Pose(pose.x, pose.y, pose.theta + np.pi)
+            intersection_distances = self.intersector.find_intersections(modified_pose, num_angles=360)
+            for dtheta, m, r in zip(angles, measurements, intersection_distances):
+                if np.isinf(m):
+                    continue
+                x = pose.x + m * np.cos(pose.theta + dtheta)
+                y = pose.y + m * np.sin(pose.theta + dtheta)
+                point = Point(x, y)
+                range_difference = abs(m - r)
+                measurement_positions.append(point)
+                if range_difference > self.range_treshold:
+                    if self.intersector.max_x > point.x > self.intersector.min_x and\
+                            self.intersector.max_y > point.y > self.intersector.min_y:
+                        self.interesting_points.append(point)
 
         return measurement_positions
 
-    def read_measurements(self):
-        with open("meas.txt") as f:
-            readings = f.readlines()[0]
-            m = readings.split(", ")
-
-        for i in range(num_angles):
-            index = i * int(360 / num_angles)
-            measurement = float(m[index])
-            if index == 177:
-                a = 0
-            self.measurements.append(measurement)
+    def _read_measurements(self):
+        with open('measurements.txt') as f:
+            lines = f.readlines()
+            for line in lines:
+                coords = [float(c) for c in line.split(')')[0][1:].split(',')]
+                ranges = [float(r) for r in line.split(')')[1][3:].split(',')]
+                self.poses.append(Pose(*coords))
+                self.measurements.append(ranges)
 
     def plot(self):
-        meas_pos = self.transform()
-        [p.plot() for p in meas_pos]
-        plt.axis([0, 3, 0, 3])
+        plt.axis([-0.5, 3, -0.5, 3])
+        self.transform()
+        self.get_interesting_points()
+
+        self.intersector.show_walls()
+        # [p.plot() for p in meas_pos[::10]]
+        [p.plot('bo') for p in self.interesting_points[::1]]
         plt.show()
+
+        self.intersector.show_walls()
+        [p.plot('ro') for p in self.interesting_points2[::1]]
+        plt.show()
+
+    def _read_map(self):
+        min_x = 100
+        max_x = -100
+        min_y = 100
+        max_y = -100
+
+        with open("maze.txt") as f:
+            lines = f.readlines()
+            for line in lines:
+                coords = line.split()
+                x1, y1, x2, y2 = float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3])
+                p1 = Point(x1, y1)
+                p2 = Point(x2, y2)
+                self.walls.append(Segment(p1, p2))
+
+                if x1 < min_x:
+                    min_x = x1
+                if x2 < min_x:
+                    min_x = x2
+                if x1 > max_x:
+                    max_x = x1
+                if x2 > max_x:
+                    max_x = x2
+
+                if y1 < min_y:
+                    min_y = y1
+                if y2 < min_y:
+                    min_y = y2
+                if y1 > max_y:
+                    max_y = y1
+                if y2 > max_y:
+                    max_y = y2
+
+        self.min_x = min_x
+        self.max_x = max_x
+        self.min_y = min_y
+        self.max_y = max_y
 
 
 class Mapper:
+    """ Have points_threshold > num_inlier_threshold """
 
-    def __init__(self, inlier_threshold = 0.1):
-        self.inlier_threshold = inlier_threshold
+    def __init__(self, inlier_distance_threshold=0.1, points_treshold=200, num_inlier_threshold=100):
+        self.inlier_distance_threshold = inlier_distance_threshold
+        self.num_inlier_threshold = num_inlier_threshold
+        self.points_treshold = points_treshold
+        self.interesting_points = []
 
     def RANSAC(self, points):
         num_points = len(points)
@@ -147,45 +263,57 @@ class Mapper:
                     continue
 
                 line = Line(p1, p2)
-                line.find_inliers(points, self.inlier_threshold)
+                line.find_inliers(points, self.inlier_distance_threshold)
                 if len(line.inliers) > len(best_line.inliers):
                     best_line = line
 
         return best_line
 
-    def seqential_RANSAC(self, points):
-        pass
+    def sequential_RANSAC(self, points):
+        walls = []
+        points_left = points
+        count = 0
+        while len(points_left) > self.points_treshold:  # todo: Maybe simply a while True/len > 0:  ?
+            best_wall = self.RANSAC(points_left)  # todo: Can we use Segments instead of Lines?
+            if len(best_wall.inliers) < self.num_inlier_threshold:
+                break
 
-def parse_file():
-    poses = []
-    measurements = []
-    with open('measurements.txt') as f:
-        lines = f.readlines()
-        for line in lines:
-            coords = [float(c) for c in line.split(')')[0][1:].split(',')]
-            ranges = [float(r) for r in line.split(')')[1][3:].split(',')]
-            poses.append(Pose(*coords))
-            measurements.append(ranges)
+            count += 1
+            print("Line: %s" % count)
+            print("wall: %s" % best_wall)
 
-    return poses, measurements
+            walls.append(best_wall)
+
+            #REMOVE FROM POINTS_LEFT BEST_WALL.INLIERS BUT KEEPING THE ORDER
+            outliers = []
+            for point in points_left:
+                found = False
+                for inlier in best_wall.inliers:
+                    if point == inlier:
+                        found = True
+
+                if not found:
+                    outliers.append(point)
+
+            points_left = outliers
+
+        return walls
 
 
 if __name__ == "__main__":
 
-    poses, measurements = parse_file()
-
-    num_angles = 360
-    threshold = 0.05
-
-    pose = Pose(0.225, 0.225, np.pi / 2)
-    meas = Measurements(num_angles)
+    meas = Measurements()
     meas.plot()
 
-    points = meas.transform()
-    mapper = Mapper(threshold)
+    meas.get_interesting_points()
+    points = meas.interesting_points2
 
-    line = mapper.RANSAC(points)
-    line.plot_inliers()
+    mapper = Mapper(inlier_distance_threshold=0.1)
+    mapper.sequential_RANSAC(points)
 
-    plt.axis([0, 3, 0, 3])
-    plt.show()
+    #
+    # line = mapper.RANSAC(points)
+    # line.plot_inliers()
+    #
+    # plt.axis([0, 3, 0, 3])
+    # plt.show()

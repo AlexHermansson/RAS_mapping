@@ -156,8 +156,23 @@ class Mapper:
     def seqential_RANSAC(self, points):
         pass
 
+def parse_file():
+    poses = []
+    measurements = []
+    with open('measurements.txt') as f:
+        lines = f.readlines()
+        for line in lines:
+            coords = [float(c) for c in line.split(')')[0][1:].split(',')]
+            ranges = [float(r) for r in line.split(')')[1][3:].split(',')]
+            poses.append(Pose(*coords))
+            measurements.append(ranges)
+
+    return poses, measurements
+
 
 if __name__ == "__main__":
+
+    poses, measurements = parse_file()
 
     num_angles = 360
     threshold = 0.05

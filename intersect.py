@@ -90,13 +90,13 @@ class Pose:
 
 class Intersections:
 
-    def __init__(self):
+    def __init__(self, path_to_map):
         self.walls = []
         self.min_x = 0
         self.max_x = 0
         self.min_y = 0
         self.max_y = 0
-        self.read_map()
+        self._read_map(path_to_map)
 
     def show_walls(self):
         for wall in self.walls:
@@ -132,15 +132,17 @@ class Intersections:
         p2 = Point(x2, y2)
         return Line(p1, p2)
 
-    def read_map(self):
+    def _read_map(self, path_to_map):
         min_x = 100
         max_x = -100
         min_y = 100
         max_y = -100
 
-        with open("maze.txt") as f:
+        with open(path_to_map) as f:
             lines = f.readlines()
             for line in lines:
+                if line[0] == '#':
+                    continue
                 coords = line.split()
                 x1, y1, x2, y2 = float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3])
                 p1 = Point(x1, y1)
@@ -173,7 +175,7 @@ class Intersections:
 
 if __name__ == "__main__":
 
-    intersections = Intersections()
+    intersections = Intersections('maze.txt')
     intersections.show_walls()
     pose = Pose(0.225, 0.225, np.pi/2)
     pose.plot()

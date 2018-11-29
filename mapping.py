@@ -37,8 +37,17 @@ class Point:
     def dot(self, other):
         return self.x * other.x + self.y * other.y
 
-    def plot(self, cm='ro'):
-        plt.plot(self.x, self.y, cm, markersize=2)
+    def plot(self, cm='ro', mz=2):
+        plt.plot(self.x, self.y, cm, markersize=mz)
+
+    def number_of_neighbors(self, points, dist_threshold):
+        neighbor_count = 0
+        for point in points:
+            dist = self.dist(point)
+            if dist < dist_threshold:
+                neighbor_count += 1
+
+        return neighbor_count
 
 
 class Segment:
@@ -46,6 +55,7 @@ class Segment:
     def __init__(self, p1, p2):
         self.p1 = p1
         self.p2 = p2
+        self.inliers = []
 
     def __repr__(self):
         return "(%s, %s)" % (self.p1, self.p2)
@@ -55,6 +65,17 @@ class Segment:
         t_star = min(max(t_hat, 0), 1)
         dist = (self.p1 + (self.p2 - self.p1).mult(t_star) - point).norm()
         return dist
+
+    def find_inliers(self, points, inlier_threshold):
+        for point in points:
+            dist = self.dist_from_segment(point)
+            if dist < inlier_threshold:
+                self.inliers.append(point)
+
+    def plot(self):
+        xs = [self.p1.x, self.p2.x]
+        ys = [self.p1.y, self.p2.y]
+        plt.plot(xs, ys, 'g')
 
 
 class Line:
@@ -76,7 +97,7 @@ class Line:
         self.inliers = []
 
     def __repr__(self):
-        return "k: %s, m: %s" % (self.k, self.m)
+        return "p: %s, theta: %s" % (self.p, self.theta * 180 / np.pi)
 
     def _dist_from_line(self, point):
         q_moved = point - self.p
@@ -115,21 +136,20 @@ class Pose:
 
 class Measurements:
 
-    def __init__(self):
-        self.intersector = Intersections()
-        self.num_angles = 360
-        self.range_treshold = 0.15
+    def __init__(self, range_treshold, path_to_map='maze_new.txt', path_to_measurements='measurements_new.txt'):
+        self.intersector = Intersections(path_to_map)
+        self.num_angles = 20
+        self.range_treshold = range_treshold
         self.poses = []
         self.walls = []
         self.measurements = []
         self.interesting_points = []
-        self.interesting_points2 = []
         self.min_x = 0
         self.max_x = 0
         self.min_y = 0
         self.max_y = 0
-        self._read_map()
-        self._read_measurements()
+        self._read_map(path_to_map)
+        self._read_measurements(path_to_measurements)
 
     def get_interesting_points(self):
 
@@ -153,7 +173,7 @@ class Measurements:
                 measurement_positions.append(point)
                 if min_dist > self.range_treshold:
                     if self.max_x > point.x > self.min_x and self.max_y > point.y > self.min_y:
-                        self.interesting_points2.append(point)
+                        self.interesting_points.append(point)
 
         return measurement_positions
 
@@ -181,38 +201,42 @@ class Measurements:
 
         return measurement_positions
 
-    def _read_measurements(self):
-        with open('measurements.txt') as f:
+    def _read_measurements(self, path_to_measurements):
+        indices_to_use = range(0, 360, 360/self.num_angles)
+        with open(path_to_measurements) as f:
             lines = f.readlines()
             for line in lines:
                 coords = [float(c) for c in line.split(')')[0][1:].split(',')]
-                ranges = [float(r) for r in line.split(')')[1][3:].split(',')]
+                ranges = [float(r) for i, r in enumerate(line.split(')')[1][3:].split(','))
+                          if i in indices_to_use]
                 self.poses.append(Pose(*coords))
                 self.measurements.append(ranges)
 
     def plot(self):
-        plt.axis([-0.5, 3, -0.5, 3])
-        self.transform()
+        # self.transform()
         self.get_interesting_points()
+        print("Number of interesting points: %d" % len(self.interesting_points))
+
+        # self.intersector.show_walls()
+        # [p.plot() for p in meas_pos[::1]]
+        # [p.plot('bo') for p in self.interesting_points[::1]]
+        # plt.show()
 
         self.intersector.show_walls()
-        # [p.plot() for p in meas_pos[::10]]
-        [p.plot('bo') for p in self.interesting_points[::1]]
+        [p.plot('ro') for p in self.interesting_points[::1]]
         plt.show()
 
-        self.intersector.show_walls()
-        [p.plot('ro') for p in self.interesting_points2[::1]]
-        plt.show()
-
-    def _read_map(self):
+    def _read_map(self, path_to_map):
         min_x = 100
         max_x = -100
         min_y = 100
         max_y = -100
 
-        with open("maze.txt") as f:
+        with open(path_to_map) as f:
             lines = f.readlines()
             for line in lines:
+                if line[0] == '#':
+                    continue
                 coords = line.split()
                 x1, y1, x2, y2 = float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3])
                 p1 = Point(x1, y1)
@@ -246,7 +270,7 @@ class Measurements:
 class Mapper:
     """ Have points_threshold > num_inlier_threshold """
 
-    def __init__(self, inlier_distance_threshold=0.1, points_treshold=200, num_inlier_threshold=100):
+    def __init__(self, inlier_distance_threshold=0.1, points_treshold=50, num_inlier_threshold=30):
         self.inlier_distance_threshold = inlier_distance_threshold
         self.num_inlier_threshold = num_inlier_threshold
         self.points_treshold = points_treshold
@@ -269,22 +293,45 @@ class Mapper:
 
         return best_line
 
+    def RANSAC_segment(self, points):
+        num_points = len(points)
+        best_num_inliers = 0
+        for i in range(num_points):
+            for j in range(num_points):
+                p1 = points[i]
+                p2 = points[j]
+                if p1 == p2:
+                    continue
+
+                segment = Segment(p1, p2)
+
+                segment.find_inliers(points, self.inlier_distance_threshold)
+                if len(segment.inliers) > best_num_inliers:
+                    best_segment = segment
+                    best_num_inliers = len(best_segment.inliers)
+
+        return best_segment
+
     def sequential_RANSAC(self, points):
         walls = []
         points_left = points
         count = 0
-        while len(points_left) > self.points_treshold:  # todo: Maybe simply a while True/len > 0:  ?
-            best_wall = self.RANSAC(points_left)  # todo: Can we use Segments instead of Lines?
+
+        while True:
+            print('Number of interesting points: %d \n' % len(points_left))
+            print('Starting to fit line #%d \n' % (count+1))
+            best_wall = self.RANSAC(points_left)
             if len(best_wall.inliers) < self.num_inlier_threshold:
+                print('Breaking, not enough inliers anymore!')
                 break
 
             count += 1
             print("Line: %s" % count)
             print("wall: %s" % best_wall)
+            print("Number of inliers: %s" % len(best_wall.inliers))
 
             walls.append(best_wall)
 
-            #REMOVE FROM POINTS_LEFT BEST_WALL.INLIERS BUT KEEPING THE ORDER
             outliers = []
             for point in points_left:
                 found = False
@@ -299,17 +346,80 @@ class Mapper:
 
         return walls
 
+    def sequential_RANSAC_segment(self, points, neighbor_dist_threshold, number_of_neighbors_threshold):
+        segments = []
+        points_left = points
+        count = 0
+
+        while True:
+            print('Number of interesting points: %d \n' % len(points_left))
+            print('Starting to fit line #%d \n' % (count+1))
+            best_segment = self.RANSAC_segment(points_left)
+            if len(best_segment.inliers) < self.num_inlier_threshold:
+                print('Breaking, not enough inliers anymore!')
+                break
+
+            count += 1
+            print("Line: %s" % count)
+            print("wall: %s" % best_segment)
+
+            segments.append(best_segment)
+
+            outliers = []
+            for point in points_left:
+                found = False
+                for inlier in best_segment.inliers:
+                    if point == inlier:
+                        found = True
+
+                if not found:
+                    outliers.append(point)
+
+            points_left = outliers
+
+        final_walls = []
+        for segment in segments:
+            final_walls.append(self.get_wall(segment, neighbor_dist_threshold, number_of_neighbors_threshold))
+
+        return final_walls
+
+    def get_wall(self, segment, neighbor_dist_threshold, number_of_neighbors_threshold):
+        points = segment.inliers
+        points_close_to_wall = self._find_cluster(points, neighbor_dist_threshold, number_of_neighbors_threshold)
+        wall = self.RANSAC_segment(points_close_to_wall)
+        return wall
+
+    @staticmethod
+    def _find_cluster(points, neighbor_dist_threshold, number_of_neighbors_threshold):
+        indices_to_remove = []
+        for i, p in enumerate(points):
+            num_neighbors = p.number_of_neighbors(points, neighbor_dist_threshold) - 1  # Removing the point itself from its neighbors
+            if num_neighbors < number_of_neighbors_threshold:
+                indices_to_remove.append(i)
+
+        return [p for i, p in enumerate(points) if i not in indices_to_remove]
+
 
 if __name__ == "__main__":
 
-    meas = Measurements()
-    meas.plot()
+    range_from_wall_threshold = 0.15
+    inlier_distance_threshold = 0.03
+    num_inliers_threshold = 10  # maybe reduce further?
+
+    meas = Measurements(range_from_wall_threshold)
+    # meas.plot()
 
     meas.get_interesting_points()
-    points = meas.interesting_points2
+    points = meas.interesting_points
 
-    mapper = Mapper(inlier_distance_threshold=0.1)
-    mapper.sequential_RANSAC(points)
+    mapper = Mapper(inlier_distance_threshold, 0, num_inlier_threshold=num_inliers_threshold)
+    segments = mapper.sequential_RANSAC_segment(points, 0.05, 1)
+
+    meas.intersector.show_walls()
+    [p.plot('ro') for p in meas.interesting_points]
+    [s.plot() for s in segments]
+    plt.show()
+
 
     #
     # line = mapper.RANSAC(points)

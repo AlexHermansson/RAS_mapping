@@ -247,3 +247,22 @@ class Graph:
 
         plt.legend()
         self.plot_graph(axis_size=axis_size)
+
+
+def build_graph(path_to_map, robot_radius):
+    obst_map = ObstacleMap(robot_radius)
+    obst_map.construct_obstacle_map(path_to_map)
+    graph = Graph(obst_map.obstacles, obst_map.map_dimensions)
+    graph.build_visibility_graph()
+    return graph
+
+
+if __name__ == '__main__':
+
+    robot_radius = 0.14
+    path_to_map = "maze_new.txt"
+
+    graph = build_graph(path_to_map, robot_radius)
+    path = graph.shortest_path(Vertex(0.225, 0.225), Vertex(0.8, 0.225))
+    graph.plot_path(path, [-0.5, 3, -0.5, 3])
+

@@ -7,6 +7,7 @@ from collections import OrderedDict
 import numpy as np
 import matplotlib.pyplot as plt
 import shapely.geometry as sh
+import shapely.ops as ops
 
 
 class LineBox:
@@ -107,7 +108,7 @@ class ObstacleMap:
         with open(path_to_maze) as f:
             for line in f:
                 point_list = line.split()
-                if point_list[0] == '#':
+                if line[0] == '#':
                     continue
                 start_point = np.array(point_list[0:2], dtype=float)
                 end_point = np.array(point_list[2:4], dtype=float)
@@ -212,6 +213,23 @@ class ObstacleMap:
                              [first_point[1], second_point[1]],
                              'k')
 
+    def contains_point(self, point):
+        in_obst = False
+        for obst in self.obstacles:
+            if obst.contains(point):
+                in_obst = True
+
+        return in_obst
+
+    def get_obstacle_containing_point(self, point):
+        polygon = None
+        for obst in self.obstacles:
+            if obst.contains(point):
+                polygon = obst
+                break
+
+        return polygon
+
 
 if __name__ == '__main__':
 
@@ -226,11 +244,6 @@ if __name__ == '__main__':
 
     p = sh.Point(x, y)
 
-    all_obstacles = obstacle_map.obstacles
-
-    in_obst = False
-    for obst in all_obstacles:
-        if obst.contains(p):
-            in_obst = True
-
-    print('In obstacle: %s' % in_obst)
+    obst = obstacle_map.get_obstacle_containing_point(p)
+    nearest = ops.nearest_points(p, obst.boundary)
+    a = 0

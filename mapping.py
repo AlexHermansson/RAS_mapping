@@ -404,7 +404,7 @@ if __name__ == "__main__":
 
     range_from_wall_threshold = 0.15
     inlier_distance_threshold = 0.03
-    num_inliers_threshold = 10  # maybe reduce further?
+    num_inliers_threshold = 15  # maybe reduce further?
 
     meas = Measurements(range_from_wall_threshold)
     # meas.plot()

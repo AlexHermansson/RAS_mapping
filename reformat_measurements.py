@@ -5,8 +5,8 @@ def read_measurements(path_to_measurements, new_path):
             for line in lines:
                 coords = [float(c) for c in line.split(')')[0][1:].split(',')]
                 ranges = [float(r) for r in line.split(')')[1][3:].split(',')]
-                coords_str = ("%s" % coords)[1:-1] + '\n'
-                ranges_str = ("%s" % ranges)[1:-1] + '\n'
+                coords_str = (("%s" % coords)[1:-1] + '\n').replace(',', '')
+                ranges_str = (("%s" % ranges)[1:-1] + '\n').replace(',', '')
                 fnew.write(coords_str)
                 fnew.write(ranges_str)
 
